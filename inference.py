@@ -31,8 +31,8 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 
 API_KEY      = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.getenv("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
+API_BASE_URL = os.getenv("API_BASE_URL", "<your-active-endpoint>")
+MODEL_NAME   = os.getenv("MODEL_NAME",   "<your-active-model>")
 SERVER_URL   = os.getenv("SERVER_URL",   "http://localhost:7860").rstrip("/")
 TASK_NAME    = os.getenv("MY_ENV_TASK",  "easy")   # easy | medium | hard
 BENCHMARK    = "sql-query-debugger"
