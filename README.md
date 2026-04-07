@@ -1,3 +1,13 @@
+---
+title: SQL Query Debugger
+emoji: 🛠️
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+tags:
+  - openenv
+---
 # SQL Query Debugger — OpenEnv Environment
 
 An **OpenEnv-compliant** reinforcement-learning environment where an AI agent must
