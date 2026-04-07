@@ -1,0 +1,85 @@
+name: sql-query-debugger
+version: "1.0.0"
+description: >
+  An OpenEnv environment where an AI agent must debug and fix broken SQL queries
+  against a real SQLite database. Three tasks of increasing difficulty simulate
+  the real-world data-engineering workflow of diagnosing query failures.
+
+author: openenv-submission
+tags:
+  - openenv
+  - sql
+  - debugging
+  - data-engineering
+  - real-world
+
+# ── Action space ───────────────────────────────────────────────────────────
+action_space:
+  type: text
+  schema:
+    query:
+      type: string
+      description: A SQL SELECT statement the agent submits as its fixed query.
+
+# ── Observation space ──────────────────────────────────────────────────────
+observation_space:
+  task_id:
+    type: string
+  task_description:
+    type: string
+  broken_query:
+    type: string
+  schema_info:
+    type: string
+  last_query:
+    type: string
+    nullable: true
+  last_execution_result:
+    type: string
+    nullable: true
+  last_reward:
+    type: float
+  step_number:
+    type: integer
+  done:
+    type: boolean
+
+# ── Reward ─────────────────────────────────────────────────────────────────
+reward:
+  range: [-0.05, 1.0]
+  description: >
+    Per step: +0.05 if query executes without error, plus up to +0.95 scaled by
+    result-set correctness (exact match = 1.0, partial = 0.2–0.7). Broken SQL
+    yields -0.05. Episode ends on exact match or max_steps (8).
+
+# ── Tasks ──────────────────────────────────────────────────────────────────
+tasks:
+  - id: easy
+    difficulty: easy
+    description: >
+      Fix a typo in a column name (salry → salary). Single-table query with
+      ORDER BY. Expected baseline score: ~0.9.
+
+  - id: medium
+    difficulty: medium
+    description: >
+      Fix a JOIN on the wrong column (emp_id → dept_id) and correct the HAVING
+      threshold. Two-table aggregation query. Expected baseline score: ~0.6.
+
+  - id: hard
+    difficulty: hard
+    description: >
+      Fix a correlated subquery: wrong alias reference and reversed comparison
+      operator. Tests reasoning about correlated subqueries. Expected baseline
+      score: ~0.3.
+
+# ── Endpoints ──────────────────────────────────────────────────────────────
+endpoints:
+  reset: POST /reset
+  step:  POST /step
+  state: GET  /state
+
+# ── Infrastructure ─────────────────────────────────────────────────────────
+max_steps: 8
+episode_timeout_seconds: 300
+recommended_hardware: "CPU, 2 vCPU, 8 GB RAM"
