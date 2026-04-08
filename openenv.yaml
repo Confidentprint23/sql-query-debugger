@@ -83,3 +83,17 @@ endpoints:
 max_steps: 8
 episode_timeout_seconds: 300
 recommended_hardware: "CPU, 2 vCPU, 8 GB RAM"
+
+# ── Graders ─────────────────────────────────────────────────────────
+graders:
+  - task: easy
+    endpoint: POST /grade
+    field: task=easy
+
+  - task: medium
+    endpoint: POST /grade
+    field: task=medium
+
+  - task: hard
+    endpoint: POST /grade
+    field: task=hard
