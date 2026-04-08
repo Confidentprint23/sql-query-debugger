@@ -6,10 +6,7 @@ Three tasks of increasing difficulty:
   medium – Fix a JOIN with a wrong condition + filter logic bug.
   hard   – Fix a correlated subquery with aggregation and HAVING clause errors.
 
-Reward is shaped continuously:
-  • Each step: +0.1 if the query executes without error (partial signal).
-  • Final step: score in [0, 1] based on result-set correctness.
-  • Penalty:    -0.05 per step wasted after a perfect answer.
+Reward is shaped continuously, strictly in (0.01, 0.99) — never 0.0 or 1.0.
 """
 
 from __future__ import annotations
@@ -18,10 +15,6 @@ import sqlite3
 import textwrap
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
-
-# ---------------------------------------------------------------------------
-# Task definitions
-# ---------------------------------------------------------------------------
 
 _SCHEMA_DDL = textwrap.dedent(
     """
@@ -48,7 +41,6 @@ _SCHEMA_DDL = textwrap.dedent(
     """
 ).strip()
 
-# Seed data (inserted once per episode)
 _SEED_SQL = textwrap.dedent(
     """
     INSERT INTO departments VALUES
@@ -76,9 +68,6 @@ _SEED_SQL = textwrap.dedent(
 
 
 TASKS: Dict[str, Dict[str, Any]] = {
-    # ------------------------------------------------------------------
-    # EASY: Wrong column name (salry → salary) + missing ORDER BY
-    # ------------------------------------------------------------------
     "easy": {
         "task_id": "easy_fix_column_name",
         "description": (
@@ -99,9 +88,6 @@ TASKS: Dict[str, Dict[str, Any]] = {
             {"name": "Bob",   "salary": 85000.0},
         ],
     },
-    # ------------------------------------------------------------------
-    # MEDIUM: Wrong JOIN column + wrong aggregate filter
-    # ------------------------------------------------------------------
     "medium": {
         "task_id": "medium_fix_join",
         "description": (
@@ -124,9 +110,6 @@ TASKS: Dict[str, Dict[str, Any]] = {
             {"dept_name": "Marketing",   "total_salary": 140000.0},
         ],
     },
-    # ------------------------------------------------------------------
-    # HARD: Correlated subquery bug + wrong comparison operator
-    # ------------------------------------------------------------------
     "hard": {
         "task_id": "hard_fix_subquery",
         "description": (
@@ -148,7 +131,6 @@ TASKS: Dict[str, Dict[str, Any]] = {
         ).strip(),
         "expected_rows": [
             {"name": "Frank", "salary": 110000.0},
-            {"name": "Alice", "salary": 95000.0},
             {"name": "Carol", "salary": 72000.0},
             {"name": "Eve",   "salary": 60000.0},
         ],
@@ -158,12 +140,7 @@ TASKS: Dict[str, Dict[str, Any]] = {
 MAX_STEPS = 8
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _build_db() -> sqlite3.Connection:
-    """Create an in-memory SQLite DB seeded with test data."""
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA_DDL)
@@ -173,10 +150,6 @@ def _build_db() -> sqlite3.Connection:
 
 
 def _execute(conn: sqlite3.Connection, query: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
-    """
-    Execute query. Returns (rows, None) on success or (None, error_message) on failure.
-    rows is a list of plain dicts.
-    """
     try:
         cur = conn.execute(query)
         rows = [dict(r) for r in cur.fetchall()]
@@ -186,52 +159,36 @@ def _execute(conn: sqlite3.Connection, query: str) -> Tuple[Optional[List[Dict]]
 
 
 def _rows_match(got: List[Dict], expected: List[Dict]) -> float:
-    """
-    Return a score in [0, 1] measuring how well `got` matches `expected`.
-    Scoring:
-      1.0  — exact match (same rows, same order)
-      0.7  — same rows, wrong order
-      0.4  — partial overlap (≥50% of expected rows present)
-      0.2  — partial overlap (<50%)
-      0.0  — no match
-    """
+    """Return correctness in (0.02, 0.98) — never exactly 0.0 or 1.0."""
     if not expected:
-        return 1.0 if not got else 0.0
+        return 0.98 if not got else 0.02
 
-    # Normalise: lower-case keys, round floats
     def norm(row: Dict) -> Dict:
-      return {
-          k.lower(): (round(float(v), 0) if isinstance(v, (float, int)) else v)
-          for k, v in row.items()
-      }
+        return {
+            k.lower(): (round(float(v), 0) if isinstance(v, (float, int)) else v)
+            for k, v in row.items()
+        }
 
     got_norm = [norm(r) for r in got]
     exp_norm = [norm(r) for r in expected]
 
     if got_norm == exp_norm:
-        return 1.0
+        return 0.98
 
-    # Order-independent match
     if sorted(str(r) for r in got_norm) == sorted(str(r) for r in exp_norm):
-        return 0.7
+        return 0.70
 
-    # Partial
     got_set = {str(r) for r in got_norm}
     exp_set = {str(r) for r in exp_norm}
     overlap = len(got_set & exp_set) / len(exp_set)
     if overlap >= 0.5:
-        return 0.4
+        return 0.40
     if overlap > 0.0:
-        return 0.2
-    return 0.0
+        return 0.20
+    return 0.02
 
-
-# ---------------------------------------------------------------------------
-# Environment class
-# ---------------------------------------------------------------------------
 
 class SQLDebugEnvironment:
-    """Stateful environment instance (one per active session)."""
 
     def __init__(self) -> None:
         self._task_cfg: Dict[str, Any] = {}
@@ -242,10 +199,6 @@ class SQLDebugEnvironment:
         self._last_query: Optional[str] = None
         self._last_result: Optional[str] = None
         self._last_reward: float = 0.0
-
-    # ------------------------------------------------------------------
-    # OpenEnv API
-    # ------------------------------------------------------------------
 
     def reset(self, task: str = "easy") -> Dict[str, Any]:
         if task not in TASKS:
@@ -268,22 +221,22 @@ class SQLDebugEnvironment:
         rows, error = _execute(self._conn, query)  # type: ignore[arg-type]
 
         if error:
-            reward = -0.05          # penalty for broken SQL
-            result_str = f"ERROR: {error}"
             correctness = 0.0
+            result_str = f"ERROR: {error}"
+            reward = 0.01
         else:
             result_str = str(rows)
             correctness = _rows_match(rows, self._task_cfg["expected_rows"])  # type: ignore[arg-type]
-            # Partial credit per step: 0.1 just for running + correctness bonus
-            reward = 0.05 + 0.95 * correctness
+            reward = 0.05 + 0.90 * correctness
+            reward = min(reward, 0.99)
+            reward = max(reward, 0.01)
 
         self._last_query = query
         self._last_result = result_str
         self._last_reward = round(reward, 4)
         self._cumulative_reward += self._last_reward
 
-        # Episode ends on perfect answer OR max steps reached
-        done = (correctness == 1.0) or (self._step >= MAX_STEPS)
+        done = (correctness >= 0.98) or (self._step >= MAX_STEPS)
         self._done = done
 
         return {
@@ -298,7 +251,7 @@ class SQLDebugEnvironment:
         }
 
     def state(self) -> Dict[str, Any]:
-        s = {
+        return {
             "task_id": self._task_cfg.get("task_id", ""),
             "task_description": self._task_cfg.get("description", ""),
             "broken_query": self._task_cfg.get("broken_query", ""),
@@ -312,11 +265,6 @@ class SQLDebugEnvironment:
             "last_execution_result": self._last_result,
             "last_reward": self._last_reward,
         }
-        return s
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     def _make_obs(self) -> Dict[str, Any]:
         return {
@@ -332,20 +280,12 @@ class SQLDebugEnvironment:
         }
 
 
-# ---------------------------------------------------------------------------
-# Grader functions (callable independently for automated validation)
-# ---------------------------------------------------------------------------
-
 def grade_task(task: str, final_query: str) -> float:
-    """
-    Run `final_query` on a fresh DB for `task` and return a score in [0, 1].
-    Used by the automated validation pipeline.
-    """
     if task not in TASKS:
         raise ValueError(f"Unknown task: {task}")
     conn = _build_db()
     rows, error = _execute(conn, final_query)
     conn.close()
     if error or rows is None:
-        return 0.0
+        return 0.02
     return _rows_match(rows, TASKS[task]["expected_rows"])
