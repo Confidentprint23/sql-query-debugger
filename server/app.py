@@ -7,10 +7,11 @@ Endpoints:
   GET  /state          — return full internal state
   GET  /health         — liveness probe
   GET  /tasks          — list available tasks and metadata
+  POST /grade          — grade a query for a specific task
+  GET  /graders        — list all tasks with graders
 """
 
 from __future__ import annotations
-from server.environment import grade_task, TASKS
 
 import os
 from typing import Any, Dict, Optional
@@ -19,11 +20,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Adjust import path when running from repo root vs inside server/
 try:
-    from server.environment import SQLDebugEnvironment, TASKS, _SCHEMA_DDL
+    from server.environment import SQLDebugEnvironment, TASKS, _SCHEMA_DDL, grade_task
 except ModuleNotFoundError:
-    from environment import SQLDebugEnvironment, TASKS, _SCHEMA_DDL  # type: ignore
+    from environment import SQLDebugEnvironment, TASKS, _SCHEMA_DDL, grade_task  # type: ignore
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -45,7 +45,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Single global environment instance (one session at a time)
 _env: SQLDebugEnvironment = SQLDebugEnvironment()
 
 # ---------------------------------------------------------------------------
@@ -64,29 +63,6 @@ class StepRequest(BaseModel):
 class GradeRequest(BaseModel):
     task: str
     query: str
-
-@app.post("/grade")
-def grade(req: GradeRequest) -> Dict[str, Any]:
-    """Grade a query for a specific task. Returns score strictly in (0, 1)."""
-    if req.task not in TASKS:
-        raise HTTPException(status_code=400, detail=f"Unknown task '{req.task}'. Valid: {list(TASKS)}")
-    score = grade_task(req.task, req.query)
-    return {
-        "task": req.task,
-        "score": score,
-        "success": score >= 0.90,
-    }
-
-@app.get("/graders")
-def list_graders() -> Dict[str, Any]:
-    """List all tasks that have graders."""
-    return {
-        "graders": [
-            {"task": "easy",   "task_id": "easy_fix_column_name",  "difficulty": "easy"},
-            {"task": "medium", "task_id": "medium_fix_join",        "difficulty": "medium"},
-            {"task": "hard",   "task_id": "hard_fix_subquery",      "difficulty": "hard"},
-        ]
-    }
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -137,8 +113,33 @@ def list_tasks() -> Dict[str, Any]:
     }
 
 
+@app.post("/grade")
+def grade(req: GradeRequest) -> Dict[str, Any]:
+    """Grade a query for a specific task. Returns score strictly in (0, 1)."""
+    if req.task not in TASKS:
+        raise HTTPException(status_code=400, detail=f"Unknown task '{req.task}'. Valid: {list(TASKS)}")
+    score = grade_task(req.task, req.query)
+    return {
+        "task": req.task,
+        "score": score,
+        "success": score >= 0.90,
+    }
+
+
+@app.get("/graders")
+def list_graders() -> Dict[str, Any]:
+    """List all tasks that have graders."""
+    return {
+        "graders": [
+            {"task": "easy",   "task_id": "easy_fix_column_name",  "difficulty": "easy"},
+            {"task": "medium", "task_id": "medium_fix_join",        "difficulty": "medium"},
+            {"task": "hard",   "task_id": "hard_fix_subquery",      "difficulty": "hard"},
+        ]
+    }
+
+
 # ---------------------------------------------------------------------------
-# Dev entry point
+# Entry point
 # ---------------------------------------------------------------------------
 
 def main():
