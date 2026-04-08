@@ -61,8 +61,29 @@ class StepRequest(BaseModel):
     action: ActionPayload
 
 class GradeRequest(BaseModel):
-    task: str
-    query: str
+    task: Optional[str] = None
+    task_id: Optional[str] = None
+    query: Optional[str] = ""
+
+@app.post("/grade")
+def grade(req: GradeRequest) -> Dict[str, Any]:
+    task = req.task or req.task_id or ""
+    # Strip prefix if validator sends full task_id like "easy_fix_column_name"
+    if task not in TASKS:
+        for k in TASKS:
+            if task.startswith(k):
+                task = k
+                break
+    if task not in TASKS:
+        raise HTTPException(status_code=400, detail=f"Unknown task '{task}'. Valid: {list(TASKS)}")
+    query = req.query or ""
+    score = grade_task(task, query) if query else 0.5
+    return {
+        "task": task,
+        "task_id": TASKS[task]["task_id"],
+        "score": score,
+        "success": score >= 0.90,
+    }
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -101,16 +122,17 @@ def state() -> Dict[str, Any]:
 
 @app.get("/tasks")
 def list_tasks() -> Dict[str, Any]:
-    """List all available tasks with metadata (no expected_rows exposed)."""
     return {
         task_name: {
             "task_id": cfg["task_id"],
+            "name": task_name,
             "description": cfg["description"],
             "broken_query": cfg["broken_query"],
             "schema": _SCHEMA_DDL,
+            "grader": f"/grade",
         }
         for task_name, cfg in TASKS.items()
-    }
+    }   
 
 
 @app.post("/grade")
