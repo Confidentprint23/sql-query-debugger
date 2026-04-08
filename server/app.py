@@ -10,6 +10,7 @@ Endpoints:
 """
 
 from __future__ import annotations
+from server.environment import grade_task, TASKS
 
 import os
 from typing import Any, Dict, Optional
@@ -59,6 +60,33 @@ class ActionPayload(BaseModel):
 
 class StepRequest(BaseModel):
     action: ActionPayload
+
+class GradeRequest(BaseModel):
+    task: str
+    query: str
+
+@app.post("/grade")
+def grade(req: GradeRequest) -> Dict[str, Any]:
+    """Grade a query for a specific task. Returns score strictly in (0, 1)."""
+    if req.task not in TASKS:
+        raise HTTPException(status_code=400, detail=f"Unknown task '{req.task}'. Valid: {list(TASKS)}")
+    score = grade_task(req.task, req.query)
+    return {
+        "task": req.task,
+        "score": score,
+        "success": score >= 0.90,
+    }
+
+@app.get("/graders")
+def list_graders() -> Dict[str, Any]:
+    """List all tasks that have graders."""
+    return {
+        "graders": [
+            {"task": "easy",   "task_id": "easy_fix_column_name",  "difficulty": "easy"},
+            {"task": "medium", "task_id": "medium_fix_join",        "difficulty": "medium"},
+            {"task": "hard",   "task_id": "hard_fix_subquery",      "difficulty": "hard"},
+        ]
+    }
 
 # ---------------------------------------------------------------------------
 # Endpoints
