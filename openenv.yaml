@@ -59,12 +59,20 @@ tasks:
     description: >
       Fix a typo in a column name (salry -> salary). Single-table query with
       ORDER BY. Expected baseline score: ~0.9.
+    grader:
+      endpoint: POST /grade
+      input:
+        task: easy
 
   - id: medium
     difficulty: medium
     description: >
       Fix a JOIN on the wrong column (emp_id -> dept_id) and correct the HAVING
       threshold. Two-table aggregation query. Expected baseline score: ~0.6.
+    grader:
+      endpoint: POST /grade
+      input:
+        task: medium
 
   - id: hard
     difficulty: hard
@@ -72,6 +80,10 @@ tasks:
       Fix a correlated subquery: wrong alias reference and reversed comparison
       operator. Tests reasoning about correlated subqueries. Expected baseline
       score: ~0.3.
+    grader:
+      endpoint: POST /grade
+      input:
+        task: hard
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
 endpoints:
